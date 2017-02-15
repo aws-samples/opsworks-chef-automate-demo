@@ -1,0 +1,144 @@
+html {
+  height: 100%;
+}
+
+
+body {
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #2c3e50; /* fallback for old browsers */
+  background: linear-gradient(to left, #26D0CE, #1A2980);
+  background: linear-gradient(to left, #26D0CE,#1A2980);
+  font-family: 'Open Sans', sans-serif;
+  font-size: 14px;
+  line-height: 20px;
+  color: #333;
+  margin: 0;
+  padding: 0;
+}
+
+.container {
+  margin: 0 auto;
+  width: 940px;
+}
+
+.center {
+  text-align: center;
+}
+
+.navbar-fixed-top {
+  z-index: 1030;
+  margin-bottom: 0;
+  overflow: visible;
+}
+
+.navbar-fixed-top .navbar-inner {
+  -webkit-box-shadow: 0 1px 10px rgba(0, 0, 0, 0.1);
+  -moz-box-shadow: 0 1px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.1);
+  padding-left: 0;
+  padding-right: 0;
+  min-height: 40px;
+  background-color: #03658C;
+}
+.brand {
+  display: block;
+  padding: 10px 20px 10px 70px;
+  margin-left: -20px;
+  font-size: 20px;
+  font-weight: 200;
+  color: #fff;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.6px;
+}
+
+.hero-unit {
+  margin-top: 30px;
+  padding: 30px 60px;
+  margin-bottom: 30px;
+  font-weight: 200;
+  color: #fff;
+}
+
+.hero-unit.major {
+  margin-top: 60px;
+}
+
+h1 {
+  font-size: 32px;
+  margin: 16px 0;
+  font-weight: bold;
+  line-height: 40px;
+  text-rendering: optimizelegibility;
+}
+
+.hero-unit h2 {
+  font-size: 24px;
+  margin: 16px 0;
+  line-height: 32px;
+  font-weight: normal;
+  margin-bottom: 20px;
+}
+
+.console-link {
+  color: #F1F2EB;
+  text-decoration: none;
+  padding: 4px 12px;
+  border: 1px solid #BEEB9F;
+  font-size: 18px;
+  letter-spacing: 1.5px;
+  transition: all 0.3s ease 0s;
+}
+
+.console-link:hover {
+  background-color: #03658C;
+  border: 0;
+  color: #fff;
+}
+
+.robot {
+  background: url("../images/sticker.png") left center no-repeat;
+  height: 360px;
+  padding-left: 360px;
+}
+
+.logos {
+  margin-top: 70px;
+  padding-left: 0;
+  margin-left: -26px;
+}
+
+li.logo {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.logo {
+  width: 120px;
+  height: 120px;
+}
+
+.opsworks-logo {
+  background: url("../images/opsworks-logo-with-servicename.svg") center center no-repeat;
+  background-size: 100%;
+}
+
+.chef-logo {
+  background: url("../images/chef-logo.svg") center center no-repeat;
+  background-size: 60%;
+}
+
+.credits {
+  position: relative;
+  top: 70px;
+  right: 0px;
+  float: right;
+}
+
+.clearfix:after {
+    content:"";
+    display:block;
+    clear:both;
+}

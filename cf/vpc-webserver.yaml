@@ -1,0 +1,552 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Sample template showing how to create a load balanced, auto scaled group in a VPC
+  where the EC2 instances can directly access the internet. **WARNING** This template
+  creates Elastic Load Balancers and Amazon EC2 instances. You will be billed for
+  the AWS resources used if you create a stack from this template.'
+Mappings:
+  # Trimmed down mapping for HVM 64bit images, all
+  # of these are Amazon Linux
+  RegionMap:
+    us-east-1      : {"64": ami-9be6f38c }
+    us-west-2      : {"64": ami-1e299d7e }
+    us-west-1      : {"64": ami-b73d6cd7 }
+    eu-west-1      : {"64": ami-c51e3eb6 }
+  SubnetConfig:
+    # Used for the application
+    # servers and the Chef server
+    Private:
+      CIDR: 10.4.1.0/24
+    # Used for the NAT and
+    # the Chef workstation
+    Public:
+      CIDR: 10.4.0.0/24
+    VPC:
+      CIDR: 10.4.0.0/16
+Outputs:
+  WebSite:
+    Description: URL of the website
+    Value:
+      Fn::Sub:
+      - "http://${DNSName}"
+      - DNSName:
+          Fn::GetAtt: [PublicElasticLoadBalancer, DNSName]
+
+  ChefWorkstationAddress:
+      Description: Public DNSName of the Chef Workstation
+      Value:
+          Fn::GetAtt: [ChefWorkstationEC2Instance, PublicDnsName]
+Parameters:
+  KeyName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: 'AWS::EC2::KeyPair::KeyName'
+  SSHLocation:
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
+    Description: Lockdown SSH access to the Chef Workstation (default can be accessed from anywhere)
+    MaxLength: '18'
+    MinLength: '9'
+    Type: String
+  WebServerInstanceType:
+    Description: Instance type of the WebServer
+    Default: 't2.micro'
+    Type: String
+  InstanceType:
+    Description: Instance type of the webserver fleet
+    Type: String
+    Default: t2.small
+  ChefWorkstationInstanceType:
+    Description: Instance type of the Chef workstation
+    Type: String
+    Default: t2.small
+  ChefDKUrl:
+    Description: Url for the ChefDK
+    Type: String
+    Default: "https://packages.chef.io/files/stable/chefdk/1.1.16/el/6/chefdk-1.1.16-1.el6.x86_64.rpm"
+
+Resources:
+  ##########################################
+  # VPC Configuration
+  VPC:
+    Properties:
+      CidrBlock:
+        Fn::FindInMap: [SubnetConfig, "VPC", "CIDR"]
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      Tags:
+      - Key: Application
+        Value:
+          Ref: 'AWS::StackId'
+      - Key: Network
+        Value: Public
+    Type: AWS::EC2::VPC
+
+  ##########################################
+  # NAT Gateway
+
+  NATGatewayEIP:
+    Type: "AWS::EC2::EIP"
+    Properties:
+      Domain: vpc
+  NATGateway:
+    Type: "AWS::EC2::NatGateway"
+    DependsOn: GatewayToInternet
+    Properties:
+      AllocationId:
+        Fn::GetAtt: ["NATGatewayEIP", "AllocationId"]
+      SubnetId:
+        Ref: PublicSubnet
+
+  ##########################################
+  # Internet Gateway for the public subnet
+
+  GatewayToInternet:
+    Properties:
+      InternetGatewayId:
+        Ref: InternetGateway
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::VPCGatewayAttachment
+  InternetGateway:
+    Properties:
+      Tags:
+      - Key: Application
+        Value:
+          Ref: 'AWS::StackId'
+      - Key: Network
+        Value: Public
+    Type: AWS::EC2::InternetGateway
+
+  #######################################
+  # VPC Network ACLs for the private and public subnet
+  #
+  InboundDynamicPortPublicPrivateNetworkAclEntry:
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: 'false'
+      NetworkAclId:
+        Ref: PublicPrivateNetworkAcl
+      PortRange:
+        From: '1024'
+        To: '65535'
+      Protocol: '6'
+      RuleAction: allow
+      RuleNumber: '101'
+    Type: AWS::EC2::NetworkAclEntry
+  InboundHTTPSPublicPrivateNetworkAclEntry:
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: 'false'
+      NetworkAclId:
+        Ref: PublicPrivateNetworkAcl
+      PortRange:
+        From: '443'
+        To: '443'
+      Protocol: '6'
+      RuleAction: allow
+      RuleNumber: '99'
+    Type: AWS::EC2::NetworkAclEntry
+  InboundHTTPPublicPrivateNetworkAclEntry:
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: 'false'
+      NetworkAclId:
+        Ref: PublicPrivateNetworkAcl
+      PortRange:
+        From: '80'
+        To: '80'
+      Protocol: '6'
+      RuleAction: allow
+      RuleNumber: '100'
+    Type: AWS::EC2::NetworkAclEntry
+  InboundSSHPublicPrivateNetworkAclEntry:
+    Properties:
+      CidrBlock:
+        Ref: SSHLocation
+      Egress: 'false'
+      NetworkAclId:
+        Ref: PublicPrivateNetworkAcl
+      PortRange:
+        From: '22'
+        To: '22'
+      Protocol: '6'
+      RuleAction: allow
+      RuleNumber: '102'
+    Type: AWS::EC2::NetworkAclEntry
+  OutboundPublicPrivateNetworkAclEntry:
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: 'true'
+      NetworkAclId:
+        Ref: PublicPrivateNetworkAcl
+      PortRange:
+        From: '0'
+        To: '65535'
+      Protocol: '6'
+      RuleAction: allow
+      RuleNumber: '100'
+    Type: AWS::EC2::NetworkAclEntry
+
+  #########################################
+  # Public facing elastic load balancer
+  #
+  PublicElasticLoadBalancer:
+    Properties:
+      CrossZone: 'true'
+      HealthCheck:
+        HealthyThreshold: '3'
+        Interval: '90'
+        Target: 'HTTP:80/'
+        Timeout: '60'
+        UnhealthyThreshold: '5'
+      Listeners:
+      - InstancePort: '80'
+        LoadBalancerPort: '80'
+        Protocol: HTTP
+      SecurityGroups:
+      - Ref: PublicLoadBalancerSecurityGroup
+      Scheme: internet-facing
+      Subnets:
+      - Ref: PublicSubnet
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+  PublicLoadBalancerSecurityGroup:
+    Properties:
+      GroupDescription: Public ELB Security Group with HTTP access on port 80 from the internet
+      SecurityGroupEgress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        IpProtocol: tcp
+        ToPort: '80'
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        IpProtocol: tcp
+        ToPort: '80'
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+
+  ###################################
+  #  Routes, ACLs and Subnets  for the private network
+
+  PrivateRoute:
+    DependsOn: ["NATGateway", "PrivateRouteTable"]
+    Properties:
+      RouteTableId: {Ref: PrivateRouteTable}
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+        Ref: NATGateway
+    Type: AWS::EC2::Route
+  PrivateRouteTable:
+    DependsOn: VPC
+    Properties:
+      VpcId: {Ref: VPC}
+      Tags:
+        - Key: Application
+          Value: {Ref: 'AWS::StackId'}
+        - Key: Network
+          Value: Private
+    Type: AWS::EC2::RouteTable
+  PublicPrivateNetworkAcl:
+    Properties:
+      Tags:
+      - Key: Application
+        Value:
+          Ref: 'AWS::StackId'
+      - Key: Network
+        Value: Public
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::NetworkAcl
+  PrivateSubnet:
+    DependsOn: VPC
+    Properties:
+      CidrBlock:
+        Fn::FindInMap: [SubnetConfig, "Private", "CIDR"]
+      Tags:
+      - Key: Application
+        Value:
+          Ref: 'AWS::StackId'
+      - Key: Network
+        Value: Private
+      VpcId: {Ref: VPC}
+    Type: AWS::EC2::Subnet
+  PrivateSubnetRouteTableAssociation:
+    DependsOn: ["PrivateRouteTable", "PrivateSubnet"]
+    Properties:
+      RouteTableId: {Ref: PrivateRouteTable}
+      SubnetId: {Ref: PrivateSubnet}
+    Type: AWS::EC2::SubnetRouteTableAssociation
+  PrivateSubnetNetworkAclAssociation:
+    DependsOn: ["PublicPrivateNetworkAcl", "PrivateSubnet"]
+    Properties:
+      NetworkAclId: {Ref: PublicPrivateNetworkAcl}
+      SubnetId: {Ref: PrivateSubnet}
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+
+  #################################
+  # Routes, ACLs and Subnets for the public network
+
+  PublicRoute:
+    DependsOn: GatewayToInternet
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: {Ref: InternetGateway}
+      RouteTableId: {Ref: PublicRouteTable}
+    Type: AWS::EC2::Route
+  PublicRouteTable:
+    Properties:
+      Tags:
+      - Key: Application
+        Value: {Ref: 'AWS::StackId'}
+      - Key: Network
+        Value: Public
+      VpcId: {Ref: VPC}
+    Type: AWS::EC2::RouteTable
+  PublicSubnet:
+    Properties:
+      CidrBlock:
+        Fn::FindInMap: [SubnetConfig, "Public", "CIDR"]
+      MapPublicIpOnLaunch: True
+      Tags:
+      - Key: Application
+        Value:
+          Ref: 'AWS::StackId'
+      - Key: Network
+        Value: Public
+      VpcId: {Ref: VPC}
+    Type: AWS::EC2::Subnet
+  PublicSubnetNetworkAclAssociation:
+    Properties:
+      NetworkAclId: {Ref: PublicPrivateNetworkAcl}
+      SubnetId: {Ref: PublicSubnet}
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+  PublicSubnetRouteTableAssociation:
+    Properties:
+      RouteTableId: {Ref: PublicRouteTable}
+      SubnetId: {Ref: PublicSubnet}
+    Type: AWS::EC2::SubnetRouteTableAssociation
+
+
+  #############################################
+  # Security group for the the Chef Workstation
+
+  ChefWorkstationSecurityGroup:
+    Properties:
+      GroupDescription: Allow ssh access for the Chef workstation server
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp:
+          Ref: SSHLocation
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+
+  #############################################
+  # Securitygroup for the webserver
+
+  WebServerSecurityGroup:
+    Properties:
+      GroupDescription: Allow access from load balancer and bastion as well as outbound HTTP and HTTPS traffic
+      SecurityGroupIngress:
+      - FromPort: '80'
+        IpProtocol: tcp
+        SourceSecurityGroupId:
+          Ref: PublicLoadBalancerSecurityGroup
+        ToPort: '80'
+      - CidrIp:
+          Ref: SSHLocation
+        FromPort: '22'
+        IpProtocol: tcp
+        ToPort: '22'
+      VpcId:
+        Ref: VPC
+    Type: AWS::EC2::SecurityGroup
+
+  ##############################################
+  #  IAM Role for associating and disassociating
+  #  nodes
+
+  AssociateNodeIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName: OpsWorksAssociate
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - "opsworks-cm:AssociateNode"
+                  - "opsworks-cm:DescribeNodeAssociationStatus"
+                Resource: "*"
+
+  AssociateNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: AssociateNodeIAMRole
+
+  DisassociateNodeIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName: OpsWorksDisassociate
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - "opsworks-cm:DisassociateNode"
+                  - "opsworks-cm:DescribeNodeAssociationStatus"
+                Resource: "*"
+        -
+          PolicyName: LambdaPutLogEvents
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "arn:aws:logs:*:*:*"
+
+  DisassociateNodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: DisassociateNodeIAMRole
+
+  ##############################################
+  #  Launch configuration and AutoScaling group
+  #  that will be used for the WebServers
+
+  ChefConfiguredLaunchConfiguration:
+    DependsOn: ["ChefWorkstationSecurityGroup", "AssociateNodeInstanceProfile"]
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId:
+        Fn::FindInMap: [RegionMap, {Ref: "AWS::Region"}, "64"]
+      InstanceType:
+        Ref: WebServerInstanceType
+      SecurityGroups:
+        - Ref: WebServerSecurityGroup
+      IamInstanceProfile:
+        Ref: AssociateNodeInstanceProfile
+  ChefConfiguredAutoScalingGroup:
+    DependsOn: ["PublicElasticLoadBalancer", "PrivateSubnet", "ChefConfiguredLaunchConfiguration"]
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MaxSize: 10
+      DesiredCapacity: 0
+      MinSize: 0
+      LaunchConfigurationName:
+        Ref: ChefConfiguredLaunchConfiguration
+      LoadBalancerNames:
+        - Ref: PublicElasticLoadBalancer
+      VPCZoneIdentifier:
+        - Ref: PrivateSubnet
+
+
+  ##############################################
+  #  EC2 Instance used for the Chef Workstation
+  #  This server will launch pre-installed with the
+  #  Chef SDK.
+
+  ChefWorkstationEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          InstallSDK: ["cf_setup", "install_rpm"]
+        cf_setup:
+          files:
+            "/etc/cfn/cfn-hup.conf":
+              content:
+                Fn::Sub: |
+                  [main]
+                  stack=${AWS::StackId}
+                  region=${AWS::Region}
+              mode: 000400
+              owner: root
+              group: root
+            "/etc/cfn/hooks.d/cfn-auto-reloader.conf":
+              content:
+                Fn::Sub: |
+                  [cfn-auto-reloader-hook]
+                  triggers=post.update
+                  path=Resources.ChefWorkstationEC2Instance.Metadata.AWS::CloudFormation::Init
+                  action=/opt/aws/bin/cfn-init -v
+                           --stack ${AWS::StackName}
+                           --resource ChefWorkstationEC2Instance
+                           --configsets InstallAndRun
+                           --region ${AWS::Region}
+                  runas=root
+              mode: 000400
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              "cfn-hup":
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_rpm:
+          commands:
+            01_install_chefdk:
+              command:
+                Fn::Sub: |
+                  rpm -i ${ChefDKUrl}
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: "PT20M"
+    Properties:
+      SubnetId:
+        Ref: PublicSubnet
+      InstanceType:
+        Ref: ChefWorkstationInstanceType
+      SecurityGroupIds:
+      - Ref: ChefWorkstationSecurityGroup
+      KeyName:
+        Ref: KeyName
+      ImageId:
+        Fn::FindInMap: [RegionMap, {Ref: "AWS::Region"}, "64"]
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash -xe
+            yum update -y aws-cfn-bootstrap
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --configsets InstallSDK --resource ChefWorkstationEC2Instance --region ${AWS::Region}
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ChefWorkstationEC2Instance --region ${AWS::Region}
