@@ -413,7 +413,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - "ec2.amazonaws.com"
+                - "lambda.amazonaws.com"
             Action:
               - "sts:AssumeRole"
       Policies:
@@ -440,12 +440,6 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                 Resource: "arn:aws:logs:*:*:*"
-
-  DisassociateNodeInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles:
-        - Ref: DisassociateNodeIAMRole
 
   ##############################################
   #  Launch configuration and AutoScaling group
