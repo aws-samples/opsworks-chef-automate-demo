@@ -76,6 +76,8 @@ Resources:
       EnableDnsHostnames: 'true'
       EnableDnsSupport: 'true'
       Tags:
+      - Key: Name
+        Value: OpsWorks Demo
       - Key: Application
         Value:
           Ref: 'AWS::StackId'
@@ -112,6 +114,8 @@ Resources:
   InternetGateway:
     Properties:
       Tags:
+      - Key: Name
+        Value: OpsWorks Demo
       - Key: Application
         Value:
           Ref: 'AWS::StackId'
@@ -244,6 +248,8 @@ Resources:
     Properties:
       VpcId: {Ref: VPC}
       Tags:
+        - Key: Name
+          Value: OpsWorks Demo
         - Key: Application
           Value: {Ref: 'AWS::StackId'}
         - Key: Network
@@ -252,6 +258,8 @@ Resources:
   PublicPrivateNetworkAcl:
     Properties:
       Tags:
+      - Key: Name
+        Value: OpsWorks Demo
       - Key: Application
         Value:
           Ref: 'AWS::StackId'
@@ -266,6 +274,8 @@ Resources:
       CidrBlock:
         Fn::FindInMap: [SubnetConfig, "Private", "CIDR"]
       Tags:
+      - Key: Name
+        Value: Private
       - Key: Application
         Value:
           Ref: 'AWS::StackId'
@@ -299,6 +309,8 @@ Resources:
   PublicRouteTable:
     Properties:
       Tags:
+      - Key: Name
+        Value: OpsWorks Demo
       - Key: Application
         Value: {Ref: 'AWS::StackId'}
       - Key: Network
@@ -311,6 +323,8 @@ Resources:
         Fn::FindInMap: [SubnetConfig, "Public", "CIDR"]
       MapPublicIpOnLaunch: True
       Tags:
+      - Key: Name
+        Value: Public
       - Key: Application
         Value:
           Ref: 'AWS::StackId'
